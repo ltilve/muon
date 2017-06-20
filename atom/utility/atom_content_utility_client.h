@@ -42,6 +42,8 @@ class AtomContentUtilityClient : public content::ContentUtilityClient {
  private:
   void OnStartupPing();
 
+  void OnImportFromChrome();
+
   typedef ScopedVector<UtilityMessageHandler> Handlers;
   Handlers handlers_;
 

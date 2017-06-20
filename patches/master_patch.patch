@@ -154,6 +154,35 @@ index 801f3b6f7a52b8a693e14222ee87510defbfa38c..9a777a7830b83e055aeeb004f11cd672
    scoped_refptr<SiteInstance> site_instance =
        ProcessManager::Get(context)->GetSiteInstanceForURL(
            Extension::GetBaseURLFromExtensionId(extension_id));
+diff --git a/chrome/browser/importer/external_process_importer_client.cc b/chrome/browser/importer/external_process_importer_client.cc
+index 7c9a4064a5d4ed1c921929d51a12503b1cbe5e75..a84ad9bd0602687453c854e1d24105ba60537012 100644
+--- a/chrome/browser/importer/external_process_importer_client.cc
++++ b/chrome/browser/importer/external_process_importer_client.cc
+@@ -9,10 +9,13 @@
+ #include "base/bind.h"
+ #include "base/memory/ptr_util.h"
+ #include "base/strings/string_number_conversions.h"
++#include "base/strings/string_util.h"
++#include "base/strings/utf_string_conversions.h"
+ #include "build/build_config.h"
+ #include "chrome/browser/browser_process.h"
+ #include "chrome/browser/importer/external_process_importer_host.h"
+ #include "chrome/browser/importer/in_process_importer_bridge.h"
++#include "chrome/common/chrome_utility_messages.h"
+ #include "chrome/common/importer/firefox_importer_utils.h"
+ #include "chrome/common/importer/imported_bookmark_entry.h"
+ #include "chrome/grit/generated_resources.h"
+@@ -296,6 +299,10 @@ void ExternalProcessImporterClient::StartProcessOnIOThread(
+   utility_process_host->SetName(
+       l10n_util::GetStringUTF16(IDS_UTILITY_PROCESS_PROFILE_IMPORTER_NAME));
+   utility_process_host->DisableSandbox();
++  if (base::StartsWith(base::UTF16ToUTF8(source_profile_.importer_name),
++                       "Chrome", base::CompareCase::SENSITIVE)) {
++    utility_process_host->Send(new BraveUtilityMsg_GetImportFromChrome());
++  }
+ 
+ #if defined(OS_MACOSX)
+   base::EnvironmentMap env;
 diff --git a/chrome/browser/importer/external_process_importer_client.h b/chrome/browser/importer/external_process_importer_client.h
 index edf5cc054ac3c703cc049509aed223313a875001..6c5f76eb7f8082afa02f6d0721efa3dc09a996d5 100644
 --- a/chrome/browser/importer/external_process_importer_client.h
@@ -601,6 +630,18 @@ index d0bbbf72ff0e356e424dc280eeb1441c990b5770..8e96ea5706f87ea98ba55fcb583b16a8
    const char* outer_app_dir_c = outer_app_dir.value().c_str();
    NSString* outer_app_dir_ns = [NSString stringWithUTF8String:outer_app_dir_c];
  
+diff --git a/chrome/common/chrome_utility_messages.h b/chrome/common/chrome_utility_messages.h
+index 744fca1bc568ef1e1f9a5f57f15fed8ab6fd36e6..a5f782718c1b31df2d6f9a67cf295438e0617c43 100644
+--- a/chrome/common/chrome_utility_messages.h
++++ b/chrome/common/chrome_utility_messages.h
+@@ -155,6 +155,7 @@ IPC_MESSAGE_CONTROL5(ChromeUtilityMsg_GetOpenFileName,
+ IPC_MESSAGE_CONTROL1(ChromeUtilityMsg_GetSaveFileName,
+                      ChromeUtilityMsg_GetSaveFileName_Params /* params */)
+ #endif  // defined(OS_WIN)
++IPC_MESSAGE_CONTROL0(BraveUtilityMsg_GetImportFromChrome)
+ 
+ //------------------------------------------------------------------------------
+ // Utility process host messages:
 diff --git a/chrome/common/chrome_utility_printing_messages.h b/chrome/common/chrome_utility_printing_messages.h
 index f5712a7a5bb8fabf279088631141cad405c8be8d..da8ff4065d721d49c1ca443a5c64c45e9f59ca4d 100644
 --- a/chrome/common/chrome_utility_printing_messages.h
@@ -1017,6 +1058,33 @@ index 1c68e13912c2dfa7cc842bab169029c58677811a..3731fe3df76b0ac1dbf155c221fc64e2
  }
  
  content::WebContents* GuestViewManager::GetGuestByInstanceIDSafely(
+diff --git a/components/os_crypt/keychain_password_mac.mm b/components/os_crypt/keychain_password_mac.mm
+index 2b38db266f9aa1f4141c8649c021042ede4e5589..ea0387b11f4b00f87596d738c152aa4cc43b2beb 100644
+--- a/components/os_crypt/keychain_password_mac.mm
++++ b/components/os_crypt/keychain_password_mac.mm
+@@ -7,6 +7,7 @@
+ #import <Security/Security.h>
+ 
+ #include "base/base64.h"
++#include "base/command_line.h"
+ #include "base/mac/mac_logging.h"
+ #include "base/rand_util.h"
+ #include "crypto/apple_keychain.h"
+@@ -61,6 +62,14 @@ const char KeychainPassword::account_name[] = "Chromium";
+ std::string KeychainPassword::GetPassword() const {
+   UInt32 password_length = 0;
+   void* password_data = NULL;
++  const char *service_name, *account_name;
++  if (base::CommandLine::ForCurrentProcess()->HasSwitch("import-chrome")) {
++    service_name = "Chrome Safe Storage";
++    account_name = "Chrome";
++  } else {
++    service_name = ::KeychainPassword::service_name;
++    account_name = ::KeychainPassword::account_name;
++  }
+   OSStatus error = keychain_.FindGenericPassword(
+       nullptr, strlen(service_name), service_name, strlen(account_name),
+       account_name, &password_length, &password_data, NULL);
 diff --git a/components/printing/common/print_messages.h b/components/printing/common/print_messages.h
 index d11d28dee8d067d142cf9b16f4130c1aeba63a03..1cc8f14d464bf4f20e69c7009fdfacb895eab605 100644
 --- a/components/printing/common/print_messages.h
